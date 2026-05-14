@@ -349,28 +349,13 @@ for k, v in [('lat', 24.7326), ('lon', 121.0918)]:
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ── 接收瀏覽器 GPS 座標（navigator.geolocation 回傳後以 query param 帶入）──────
-if 'geo_lat' in st.query_params:
-    try:
-        st.session_state['lat'] = float(st.query_params['geo_lat'])
-        st.session_state['lon'] = float(st.query_params['geo_lon'])
-        _city, _town, _country = reverse_geocode(
-            st.session_state['lat'], st.session_state['lon']
-        )
-        _loc = " ".join(filter(None, [_country, _city, _town])) or \
-               f"{st.session_state['lat']:.4f}, {st.session_state['lon']:.4f}"
-        st.toast(f"✅ GPS 定位成功！{_loc}", icon="📍")
-        st.balloons()
-    except Exception:
-        st.error("GPS 座標讀取失敗，請手動輸入。")
-    st.query_params.clear()
-
 # ── 定位 + 輸入 ──────────────────────────────────────────────────────────────
 col_btn, col_lat, col_lon = st.columns([1, 1, 1])
 
 with col_btn:
-    # 使用瀏覽器原生 GPS（比 IP 定位精準許多）
-    components.html("""
+    # 用 setComponentValue 把 GPS 座標回傳給 Python，避免跨來源限制
+    gps_result = components.html("""
+    <script src="https://unpkg.com/streamlit-component-lib/dist/index.js"></script>
     <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
     #gps-btn {
@@ -386,6 +371,8 @@ with col_btn:
     <button id="gps-btn" onclick="doGPS()">📍 GPS 精準定位</button>
     <div id="gps-msg"></div>
     <script>
+    Streamlit.setFrameHeight(85);
+
     function resetBtn(btn, msg, text) {
         btn.textContent = '📍 GPS 精準定位';
         btn.disabled = false;
@@ -397,12 +384,9 @@ with col_btn:
         const btn = document.getElementById('gps-btn');
         const msg = document.getElementById('gps-msg');
 
-        // 嘗試取得 geolocation（先嘗試 parent，再 fallback 到 self）
         let geo = null;
         try { geo = window.parent.navigator.geolocation; } catch(e) {}
-        if (!geo) {
-            try { geo = navigator.geolocation; } catch(e) {}
-        }
+        if (!geo) { try { geo = navigator.geolocation; } catch(e) {} }
 
         if (!geo) {
             msg.style.color = '#ff8a80';
@@ -415,7 +399,6 @@ with col_btn:
         msg.style.color = '#90caf9';
         msg.textContent = '請在瀏覽器彈窗中允許位置存取…';
 
-        // UI 層保底 timeout：15秒後強制解鎖按鈕
         const uiTimer = setTimeout(() => {
             resetBtn(btn, msg, '❌ 定位逾時，請再試一次或手動輸入座標');
         }, 15000);
@@ -424,18 +407,13 @@ with col_btn:
             geo.getCurrentPosition(
                 function(pos) {
                     clearTimeout(uiTimer);
-                    try {
-                        const url = new URL(window.parent.location.href);
-                        url.searchParams.set('geo_lat', pos.coords.latitude.toFixed(6));
-                        url.searchParams.set('geo_lon', pos.coords.longitude.toFixed(6));
-                        window.parent.location.href = url.toString();
-                    } catch(e) {
-                        // 無法跳轉時直接顯示座標給使用者手動填入
-                        clearTimeout(uiTimer);
-                        resetBtn(btn, msg,
-                            '📍 座標：' + pos.coords.latitude.toFixed(4) +
-                            ', ' + pos.coords.longitude.toFixed(4) + '（請手動填入）');
-                    }
+                    btn.textContent = '✅ 定位成功！';
+                    msg.style.color = '#69f0ae';
+                    msg.textContent = '座標更新中…';
+                    Streamlit.setComponentValue({
+                        lat: pos.coords.latitude,
+                        lon: pos.coords.longitude
+                    });
                 },
                 function(err) {
                     clearTimeout(uiTimer);
@@ -455,6 +433,16 @@ with col_btn:
     }
     </script>
     """, height=85)
+
+    if gps_result and isinstance(gps_result, dict):
+        st.session_state['lat'] = gps_result['lat']
+        st.session_state['lon'] = gps_result['lon']
+        _city, _town, _country = reverse_geocode(gps_result['lat'], gps_result['lon'])
+        _loc = " ".join(filter(None, [_country, _city, _town])) or \
+               f"{gps_result['lat']:.4f}, {gps_result['lon']:.4f}"
+        st.toast(f"✅ GPS 定位成功！{_loc}", icon="📍")
+        st.balloons()
+        st.rerun()
 
 with col_lat:
     lat = st.number_input("緯度 Latitude", value=st.session_state['lat'], format="%.4f")
