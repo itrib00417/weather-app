@@ -441,8 +441,6 @@ with col_btn:
         _loc = " ".join(filter(None, [_country, _city, _town])) or \
                f"{gps_result['lat']:.4f}, {gps_result['lon']:.4f}"
         st.toast(f"✅ GPS 定位成功！{_loc}", icon="📍")
-        st.balloons()
-        st.rerun()
 
 with col_lat:
     lat = st.number_input("緯度 Latitude", value=st.session_state['lat'], format="%.4f")
@@ -480,6 +478,9 @@ if st.button("🚀 產生天氣預測報告", type="primary", use_container_widt
                 "最大風速":   daily["windspeed_10m_max"],
                 "UV指數":     daily["uv_index_max"],
             })
+
+            for _ in range(5):
+                st.balloons()
 
             # ── 今日大橫幅 ──────────────────────────────────────────────────
             today = df.iloc[0]
