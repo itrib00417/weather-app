@@ -386,13 +386,23 @@ with col_btn:
     <button id="gps-btn" onclick="doGPS()">📍 GPS 精準定位</button>
     <div id="gps-msg"></div>
     <script>
+    function resetBtn(btn, msg, text) {
+        btn.textContent = '📍 GPS 精準定位';
+        btn.disabled = false;
+        msg.style.color = '#ff8a80';
+        msg.textContent = text;
+    }
+
     function doGPS() {
         const btn = document.getElementById('gps-btn');
         const msg = document.getElementById('gps-msg');
 
-        // 透過 window.parent.navigator 使用父頁面的 Geolocation，
-        // 繞過 iframe 沒有 allow="geolocation" 的限制
-        const geo = window.parent.navigator.geolocation;
+        // 嘗試取得 geolocation（先嘗試 parent，再 fallback 到 self）
+        let geo = null;
+        try { geo = window.parent.navigator.geolocation; } catch(e) {}
+        if (!geo) {
+            try { geo = navigator.geolocation; } catch(e) {}
+        }
 
         if (!geo) {
             msg.style.color = '#ff8a80';
@@ -405,26 +415,43 @@ with col_btn:
         msg.style.color = '#90caf9';
         msg.textContent = '請在瀏覽器彈窗中允許位置存取…';
 
-        geo.getCurrentPosition(
-            function(pos) {
-                const url = new URL(window.parent.location.href);
-                url.searchParams.set('geo_lat', pos.coords.latitude.toFixed(6));
-                url.searchParams.set('geo_lon', pos.coords.longitude.toFixed(6));
-                window.parent.location.href = url.toString();
-            },
-            function(err) {
-                btn.textContent = '📍 GPS 精準定位';
-                btn.disabled = false;
-                msg.style.color = '#ff8a80';
-                const msgs = {
-                    1: '已拒絕位置存取，請在網址列允許定位',
-                    2: '無法取得位置訊號',
-                    3: '定位逾時，請再試一次'
-                };
-                msg.textContent = '❌ ' + (msgs[err.code] || '定位失敗，請手動輸入座標');
-            },
-            { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-        );
+        // UI 層保底 timeout：15秒後強制解鎖按鈕
+        const uiTimer = setTimeout(() => {
+            resetBtn(btn, msg, '❌ 定位逾時，請再試一次或手動輸入座標');
+        }, 15000);
+
+        try {
+            geo.getCurrentPosition(
+                function(pos) {
+                    clearTimeout(uiTimer);
+                    try {
+                        const url = new URL(window.parent.location.href);
+                        url.searchParams.set('geo_lat', pos.coords.latitude.toFixed(6));
+                        url.searchParams.set('geo_lon', pos.coords.longitude.toFixed(6));
+                        window.parent.location.href = url.toString();
+                    } catch(e) {
+                        // 無法跳轉時直接顯示座標給使用者手動填入
+                        clearTimeout(uiTimer);
+                        resetBtn(btn, msg,
+                            '📍 座標：' + pos.coords.latitude.toFixed(4) +
+                            ', ' + pos.coords.longitude.toFixed(4) + '（請手動填入）');
+                    }
+                },
+                function(err) {
+                    clearTimeout(uiTimer);
+                    const msgs = {
+                        1: '❌ 已拒絕位置存取，請在網址列允許定位',
+                        2: '❌ 無法取得位置訊號',
+                        3: '❌ 定位逾時，請再試一次'
+                    };
+                    resetBtn(btn, msg, msgs[err.code] || '❌ 定位失敗，請手動輸入座標');
+                },
+                { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+            );
+        } catch(e) {
+            clearTimeout(uiTimer);
+            resetBtn(btn, msg, '❌ 定位失敗，請手動輸入座標');
+        }
     }
     </script>
     """, height=85)
